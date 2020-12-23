@@ -1,27 +1,32 @@
-# RedireLogin
+import { Injectable, Injector } from '@angular/core';
+import { HttpEvent, HttpInterceptor, HttpHandler, HttpRequest, HttpErrorResponse, HttpClient } from '@angular/common/http';
+import { environment } from '../../../environments/environment';
+import { Observable } from 'rxjs/Rx';
 
-This project was generated with [Angular CLI](https://github.com/angular/angular-cli) version 6.0.8.
+@Injectable()
+export class RefreshTokenInterceptor implements HttpInterceptor {
 
-## Development server
+  constructor(private injector: Injector) {}
 
-Run `ng serve` for a dev server. Navigate to `http://localhost:4200/`. The app will automatically reload if you change any of the source files.
+  intercept(request: HttpRequest<any>, next: HttpHandler): Observable<HttpEvent<any>> {
 
-## Code scaffolding
+    return next.handle(request).catch((errorResponse: HttpErrorResponse) => {
+      const error = (typeof errorResponse.error !== 'object') ? JSON.parse(errorResponse.error) : errorResponse;
 
-Run `ng generate component component-name` to generate a new component. You can also use `ng generate directive|pipe|service|class|guard|interface|enum|module`.
+      if (errorResponse.status === 401 && error.error === 'token_expired') {
+        const http = this.injector.get(HttpClient);
 
-## Build
+        return http.post<any>(`${environment.baseUrl}/auth/refresh`, {})
+          .flatMap(data => {
+            sessionStorage.setItem('token', data.token);
+            const cloneRequest = request.clone({setHeaders: {'Authorization': `Bearer ${data.token}`}});
 
-Run `ng build` to build the project. The build artifacts will be stored in the `dist/` directory. Use the `--prod` flag for a production build.
+            return next.handle(cloneRequest);
+          });
+      }
 
-## Running unit tests
+      return Observable.throw(errorResponse);
+    });
 
-Run `ng test` to execute the unit tests via [Karma](https://karma-runner.github.io).
-
-## Running end-to-end tests
-
-Run `ng e2e` to execute the end-to-end tests via [Protractor](http://www.protractortest.org/).
-
-## Further help
-
-To get more help on the Angular CLI use `ng help` or go check out the [Angular CLI README](https://github.com/angular/angular-cli/blob/master/README.md).
+  }
+}
